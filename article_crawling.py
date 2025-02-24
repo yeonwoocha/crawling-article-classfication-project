@@ -7,30 +7,12 @@ from selenium.webdriver.support import expected_conditions as EC
 import logging
 import pandas as pd
 import os
-import yaml
 import time
 import requests
 from bs4 import BeautifulSoup
-import nltk
-from textblob import TextBlob
-
-'''
-selector
-html
-    head 
-    body
-
-
--- 전체 x-path
-/html
-    /html/head
-    /html/body
-'''
-
-
-
-url = 'https://www.naver.com/'
-
+# import nltk
+# from textblob import TextBlob
+import json
 
 
 options = webdriver.ChromeOptions()
@@ -40,8 +22,9 @@ options.add_argument('--disable-webgl') # WebGL 문제 무시
 options.add_argument('--disable-software-rasterizer')  # 소프트웨어 렌더링 비활성화
 driver = webdriver.Chrome(options=options)
 driver.maximize_window()
-driver.get(url)
 
+url = 'https://www.naver.com/'
+driver.get(url)
 time.sleep(2)
 
 # body 태그 가져오기
@@ -65,39 +48,73 @@ body1 = driver.find_element(By.CSS_SELECTOR, 'body')
 body1.find_element(By.CLASS_NAME, value='mod_more_wrap').click()
 time.sleep(4)
 
-'''
-# 페이지 끝까지 스크롤하여 콘텐츠 로드
-last_height = driver.execute_script("return document.body.scrollHeight")
-
-while True:
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(2)  # 콘텐츠 로드 대기 (웹사이트에 따라 조정)
-
-    # 새로운 높이 계산
-    new_height = driver.execute_script("return document.body.scrollHeight")
-    if new_height == last_height:
-        break  # 더 이상 로드할 콘텐츠가 없으면 종료
-    last_height = new_height
-'''
-
 html = driver.page_source
 
 # BeautifulSoup으로 분석
 soup = BeautifulSoup(html, 'html.parser')
-'''
-with open('C:/Users/USER/YU/YU_python/crawling-data/crawling_article/crawler_news/drivers/train_data.txt', 'w', encoding='utf-8') as writer:
+
+with open('./train_data.txt', 'w', encoding='utf-8') as writer:
     writer.write(soup.prettify())
-'''
+
 news_title_elements = soup.find_all('a', class_='news_tit')
 news_media_elements = soup.find_all('a', class_='info press')
 
-
-
+news_data = []
 
 for idx, (title_elm,  media_elm) in enumerate(zip(news_title_elements, news_media_elements), start=1):
     link = title_elm.get('href')
     print(f'{idx}번째 뉴스 제목 : {title_elm.text}, 뉴스 링크 : {link}, 뉴스 매체 : {media_elm.text}')
-    with open('C:/Users/USER/YU/YU_python/crawling-data/crawling_article/crawler_news/drivers/main_train_data.txt', '+a', encoding='utf-8') as writer:
-        writer.write(f'{idx}번째 뉴스 제목 : {title_elm.text}, 뉴스 링크 : {link}, 뉴스 매체 : {media_elm.text}\n' )
-   
+    json_data = {
+        "index" : idx,
+        "title" : title_elm.text,
+        "link"  : link,
+        "media" : media_elm.text
+    }
+    news_data.append(json_data)
+
+with open('./main_train_data.json', 'w', encoding='utf-8') as writer:
+    # json_data = json.load(writer)
+    # writer.write(f'{idx}번째 뉴스 제목 : {title_elm.text}, 뉴스 링크 : {link}, 뉴스 매체 : {media_elm.text}\n' )
+    json.dump(news_data, writer, ensure_ascii=False, indent=4)
+
+def extract_article_body(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    article_text = []
+    
+    try:
+        # 각 기사 본문 태그
+        content = soup.select_one('div.news_cnt_detail_wrap, div.articleView, div#news-contents')
+        if content:
+            article_text = [p.get_text(strip=True) for p in content.find_all('p')]
+    except Exception as e:
+        print(f"Error with primary pattern: {e}")
+
+    if not article_text:
+        try:
+            article_text = [p.get_text(strip=True) for p in soup.find_all('p') if p.get_text(strip=True)]
+        except Exception as e:
+            print(f"Error with fallback pattern: {e}")
+    
+    return '\n'.join(article_text)
+
+with open('./main_train_data.json', 'r', encoding='utf-8') as reader:
+    data = json.load(reader)
+
+for i in range(len(data)):
+    link = data[i]['link']
+    driver.get(link)
+    time.sleep(4)
+    html = driver.page_source
+    # BeautifulSoup으로 분석
+    soup = BeautifulSoup(html, 'html.parser')
+    with open(f'./link_body_{i}.txt', 'w', encoding='utf-8') as writer:
+        writer.write(soup.prettify())
+    
+    # 기사 본문만 스크랩랩
+    text = soup.find_all('p')
+    with open(f'./test_{i}.txt', 'w', encoding='utf-8') as writer:
+        for i in text:
+            writer.write(i.text)
+            
+
 driver.quit()
